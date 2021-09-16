@@ -3,7 +3,7 @@
     <arg name="debug" default="true" />
     <arg name="demo" default="true" />
 
-    <node pkg="migrave_person_state_estimation" type="person_state_estimation" name="person_state_estimation" output="screen" 
+    <node pkg="migrave_person_state_estimation" type="person_state_estimator" name="person_state_estimator" output="screen" 
      ns="migrave_peception" >
         <param name="config_path" type="str" value="$(find migrave_person_state_estimation)/ros/config/person_state_estimation_config.yaml" />
         <param name="face_feature_topic" type="str" value="/face_features" />
