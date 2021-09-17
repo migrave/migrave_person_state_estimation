@@ -5,6 +5,7 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
   roslint
   migrave_ros_msgs
+  migrave_common
 )
 
 roslint_python()

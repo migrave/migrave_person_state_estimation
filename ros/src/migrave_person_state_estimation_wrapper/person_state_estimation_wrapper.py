@@ -11,7 +11,7 @@ from migrave_ros_msgs.msg import AffectiveState, AudioFeatures, Face, OverallGam
 from qt_nuitrack_app.msg import Faces, FaceInfo
 
 from migrave_person_state_estimation.person_state_estimation import PersonStateEstimation
-from migrave_person_state_estimation_wrapper import utils
+from migrave_common import file_utils
 
 
 class PersonStateEstimationWrapper(object):
@@ -23,7 +23,7 @@ class PersonStateEstimationWrapper(object):
         if not self._config_file or os.path.isfile(self._config_file):
             rospy.logwarn("Config file is not given or does not exist")
 
-        self._config = utils.parse_yaml_config(self._config_file)
+        self._config = file_utils.parse_yaml_config(self._config_file)
         self._debug = rospy.get_param("~debug", False) 
         self._demo = rospy.get_param("~demo", False) 
         # Time from which only messages from face_msg_time_to_keep until now() will be considered
