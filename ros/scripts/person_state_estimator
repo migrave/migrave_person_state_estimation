@@ -5,6 +5,7 @@ from migrave_person_state_estimation_wrapper.person_state_estimation_wrapper imp
 
 if __name__ == '__main__':
     rospy.init_node("person_state_estimator")
+    rospy.Rate(30)
     rospy.loginfo("Person state estimator node is running...")
     person_state_estimator = PersonStateEstimationWrapper()
 
