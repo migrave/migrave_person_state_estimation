@@ -1,46 +1,47 @@
+import os
+
+import joblib
+import numpy as np
+
 
 class PersonStateEstimation(object):
     """
-    Person state estimation
+    Person state estimation. Engagement is estimated using xgboost
     """
 
-    def __init__(self, config):
+    def __init__(self, config, pkg_dir):
         self._config = config
+        if "engagement" in self._config:
+            cls_path = os.path.join(pkg_dir,
+                                    "common",
+                                    "models",
+                                    self._config["engagement"]["model_file"])
 
-    def get_state_estimate(self, image=None, game_performance=None, audio=None, skeletons=None):
+            self._engagement_cls, self._engagement_mean, self._engagement_std = self.load_classifier(cls_path)
+
+    def load_classifier(self, cls_path):
+        with open(cls_path, 'rb') as f:
+            classifier, mean, std = joblib.load(f)
+
+        return classifier, mean, std
+
+    def estimate_engagement(self, features, normalize=True):
         """
-        Estimate person state given the current image (face, body), audio signal,
-        and game performance and return valence, arousal, and engagement scores
+        Estimate engagement given the current face features, audio signal,
+        and game performance and return engagement scores
 
-        :param image:       RGB image
-        :type name:         numpy.array
+        :param features:       Face, audio, or game performance features
+        :type name:            numpy.array
 
-        :param image:       Audio signal
-        :type name:         numpy.array
-
-        :param image:       Game performance
-        :type name:         numpy.float64
-
-        :return:            valence, arousal, engagement
+        :return:               Engagement
         """
 
-        valence = 0.0
-        arousal = 0.0
-        engagement = 0.0
-
-        # if audio:
-        #     audio_features = self._audio_feature_extractor.get_audio_features(audio)
-
-        # if game_performance:
-        #     face_features = self._face_feature_extractor.get_face_features(image)
-
-        # detected_gaze = self._gaze_extractor.get_gaze(image)
-
-        # if skeletons is None:
-        #     skeletons = self._skeleton_tracking.get_skeletons(image)
-
-        #Compute valence, arousal and engament based on audio, face,
-        #gaze and skeleton features.
-
-        return valence, arousal, engagement
+        if normalize:
+            features -= np.array(self._engagement_mean)
+            features /= self._engagement_std
         
+        probabilities = self._engagement_cls.predict_proba([features])[0]
+        max_index = np.argmax(probabilities)
+        prediction = self._engagement_cls.classes_[max_index]
+
+        return prediction, probabilities[max_index]
