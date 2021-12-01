@@ -1,9 +1,8 @@
 <?xml version="1.0"?>
 <launch>
     <arg name="debug" default="true" />
-    <arg name="demo" default="true" />
-    <arg name="face_feature_topic" default="/qt_nuitrack_app/faces" />
-    <!-- <arg name="face_feature_topic" default="/migrave_peception/face_feature_detector/face_features" /> -->
+    <arg name="face_feature_topic" default="/migrave_perception/openface_ros/faces" />
+    <arg name="of_debug_img_topic" default="/migrave_perception/openface_ros/debug_image" />
 
     <node pkg="migrave_person_state_estimation" type="person_state_estimator" name="person_state_estimator" output="screen" 
      ns="migrave_perception" >
@@ -13,6 +12,6 @@
         <param name="skeleton_topic" type="str" value="/skeletons" />
         <param name="game_performance_topic" type="str" value="/game_performance" />
         <param name="debug" type="bool" value="$(arg debug)" />
-        <param name="demo" type="bool" value="$(arg demo)" />
+        <param name="of_debug_img_topic" type="str" value="$(arg of_debug_img_topic)" />
     </node>
 </launch>
