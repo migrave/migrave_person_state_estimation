@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 
 import rospy
-from migrave_person_state_estimation_wrapper.person_state_estimation_wrapper import PersonStateEstimationWrapper
+from migrave_person_state_estimation_wrapper.person_state_estimation_wrapper import \
+    PersonStateEstimationWrapper
 
 if __name__ == '__main__':
     rospy.init_node("person_state_estimator")
@@ -10,8 +11,8 @@ if __name__ == '__main__':
     person_state_estimator = PersonStateEstimationWrapper()
 
     try:
+        person_state_estimator.initialize()
         while not rospy.is_shutdown():
-            person_state_estimator.run()
             rospy.sleep(0.05)
     except rospy.ROSInterruptException as exc:
         print("person state estimator exiting...")
