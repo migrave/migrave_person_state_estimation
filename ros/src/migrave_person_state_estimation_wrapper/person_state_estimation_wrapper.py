@@ -27,7 +27,6 @@ class PersonStateEstimationWrapper(object):
         self._debug = rospy.get_param("~debug", False) 
 
         self._face_feature_topic = rospy.get_param("~face_feature_topic", "/face_features") 
-        self._of_debug_img_topic = rospy.get_param("~of_debug_img_topic", "/of_debug_img_topic") 
         self._audio_feature_topic = rospy.get_param("~audio_feature_topic", "/audio_features") 
         self._skeleton_topic = rospy.get_param("~skeleton_topic", "/skeletons") 
 
@@ -43,12 +42,7 @@ class PersonStateEstimationWrapper(object):
         
         # subscribers
         self._sub_face_features = rospy.Subscriber(self._face_feature_topic, Faces, self.face_feature_cb)
-        self._sub_of_debug_img = rospy.Subscriber(self._of_debug_img_topic, Image, self.debug_img_cb)
         self._sub_audio_features = rospy.Subscriber(self._audio_feature_topic, AudioFeatures, self.audio_feature_cb)
-
-        # save global engagement score for  debugging
-        self._engagement_score = None
-        self._engagement_prob = None
 
         self._cvbridge = CvBridge()
 
@@ -107,25 +101,19 @@ class PersonStateEstimationWrapper(object):
             self._pub_affective_state.publish(affective_state)
 
             if self._debug:
-                self._engagement_score = engagement_score
-                self._engagement_prob = prob
-
-    def debug_img_cb(self, data: Image) -> None:
-        rospy.logdebug("Engagement %f", self._engagement_score)
-        if self._engagement_score:
-            cv_image = self._cvbridge.imgmsg_to_cv2(data, "bgr8")
-            image = cv2.putText(cv_image,
-                                'Engaged' if self._engagement_score >= 1.0 else "Disengaged",
-                                (50,50),
-                                cv2.FONT_HERSHEY_SIMPLEX,
-                                1,
-                                (0, 255, 0) if self._engagement_score >= 1.0 else (0, 0, 255),
-                                2,
-                                cv2.LINE_AA)
-            image = np.array(image, dtype=np.uint8)
-            cv_image_debug = self._cvbridge.cv2_to_imgmsg(image, "bgr8")
-            self._pub_debug_img.publish(cv_image_debug)
-            self._engagement_score = None
+                rospy.logdebug("Engagement %f", engagement_score)
+                cv_image = self._cvbridge.imgmsg_to_cv2(face.debug_image, "bgr8")
+                image = cv2.putText(cv_image,
+                                    'Engaged' if engagement_score >= 1.0 else "Disengaged",
+                                    (100, 25),
+                                    cv2.FONT_HERSHEY_SIMPLEX,
+                                    0.75,
+                                    (0, 255, 0) if engagement_score >= 1.0 else (0, 0, 255),
+                                    2,
+                                    cv2.LINE_AA)
+                image = np.array(image, dtype=np.uint8)
+                cv_image_debug = self._cvbridge.cv2_to_imgmsg(image, "bgr8")
+                self._pub_debug_img.publish(cv_image_debug)
 
     def audio_feature_cb(self, data: AudioFeatures) -> None:
        rospy.logdebug("Audio feature msg received")
