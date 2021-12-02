@@ -9,7 +9,7 @@ joblib == 1.0.1
 ```
 
 ### Package dependencies
-Person state estimation requires [`migrave_face_feature_detector`](https://github.com/migrave/migrave_perception/tree/main/migrave_face_feature_detector) which compute face features using `openface`.
+Person state estimation requires [`migrave_face_feature_detector`](https://github.com/migrave/migrave_perception/tree/main/migrave_face_feature_detector) which computes face features using `openface`.
   ```
   roslaunch migrave_face_feature_detector face_feature_detector.launch
   ```
