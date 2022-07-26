@@ -14,6 +14,12 @@ from sensor_msgs.msg import Image
 from std_msgs.msg import String
 
 
+MIGRAVE_AU_NAMES = ['AU01', 'AU02', 'AU04', 'AU05', 'AU06',
+                    'AU07', 'AU09', 'AU10', 'AU12', 'AU14',
+                    'AU15', 'AU17', 'AU20', 'AU23', 'AU25',
+                    'AU26', 'AU28', 'AU45']
+
+
 class PersonStateEstimationWrapper(object):
 
     def __init__(self):
@@ -24,11 +30,11 @@ class PersonStateEstimationWrapper(object):
             rospy.logwarn("Config file is not given or does not exist")
 
         self._config = file_utils.parse_yaml_config(self._config_file)
-        self._debug = rospy.get_param("~debug", False) 
+        self._debug = rospy.get_param("~debug", False)
 
-        self._face_feature_topic = rospy.get_param("~face_feature_topic", "/face_features") 
-        self._audio_feature_topic = rospy.get_param("~audio_feature_topic", "/audio_features") 
-        self._skeleton_topic = rospy.get_param("~skeleton_topic", "/skeletons") 
+        self._face_feature_topic = rospy.get_param("~face_feature_topic", "/face_features")
+        self._audio_feature_topic = rospy.get_param("~audio_feature_topic", "/audio_features")
+        self._skeleton_topic = rospy.get_param("~skeleton_topic", "/skeletons")
 
         # Person state estimation
         self._pse = PersonStateEstimation(self._config, pkg_path)
@@ -39,7 +45,7 @@ class PersonStateEstimationWrapper(object):
         # publishers
         self._pub_affective_state = rospy.Publisher("~affective_state", AffectiveState, queue_size=1)
         self._pub_debug_img = rospy.Publisher("~debug_image", Image, queue_size=1)
-        
+
         # subscribers
         self._sub_face_features = rospy.Subscriber(self._face_feature_topic, Faces, self.face_feature_cb)
         self._sub_audio_features = rospy.Subscriber(self._audio_feature_topic, AudioFeatures, self.audio_feature_cb)
@@ -48,40 +54,40 @@ class PersonStateEstimationWrapper(object):
 
     def face_feature_cb(self, data: Faces) -> None:
         rospy.logdebug("Face feature msg received")
-        for i,face in enumerate(data.faces):
-            face_features = []
-            # get auc
+        for i, face in enumerate(data.faces):
             auc_dict = {}
             for ac in face.action_units:
                 auc_dict[ac.name] = ac.presence
-            # Sort auc according to the dataset
-            auc_dict = dict(sorted(auc_dict.items()))
-            face_features.extend(auc_dict.values())
+
+            face_features = []
+            for au_name in MIGRAVE_AU_NAMES:
+                au_feature_name = f'of_{au_name}_c'
+                face_features.append((au_feature_name, auc_dict[au_name]))
 
             # left gaze: of_gaze_0_x, ..y, ..z
-            face_features.append(face.left_gaze.position.x)
-            face_features.append(face.left_gaze.position.y)
-            face_features.append(face.left_gaze.position.z)
+            face_features.append(('of_gaze_0_x', face.left_gaze.position.x))
+            face_features.append(('of_gaze_0_y', face.left_gaze.position.y))
+            face_features.append(('of_gaze_0_z', face.left_gaze.position.z))
 
             # right gaze: of_gaze_0_x, ..y, ..z
-            face_features.append(face.right_gaze.position.x)
-            face_features.append(face.right_gaze.position.y)
-            face_features.append(face.right_gaze.position.z)
+            face_features.append(('of_gaze_1_x', face.right_gaze.position.x))
+            face_features.append(('of_gaze_1_y', face.right_gaze.position.y))
+            face_features.append(('of_gaze_1_z', face.right_gaze.position.z))
 
             # gaze angle
-            face_features.append(face.gaze_angle.x)
-            face_features.append(face.gaze_angle.y)
+            face_features.append(('of_gaze_angle_x', face.gaze_angle.x))
+            face_features.append(('of_gaze_angle_y', face.gaze_angle.y))
 
             # head pose
-            face_features.append(face.head_pose.position.x)
-            face_features.append(face.head_pose.position.y)
-            face_features.append(face.head_pose.position.z)
-            face_features.append(face.head_pose.orientation.x)
-            face_features.append(face.head_pose.orientation.y)
-            face_features.append(face.head_pose.orientation.z)
+            face_features.append(('of_pose_Tx', face.head_pose.position.x))
+            face_features.append(('of_pose_Ty', face.head_pose.position.y))
+            face_features.append(('of_pose_Tz', face.head_pose.position.z))
+            face_features.append(('of_pose_Rx', face.head_pose.orientation.x))
+            face_features.append(('of_pose_Ry', face.head_pose.orientation.y))
+            face_features.append(('of_pose_Rz', face.head_pose.orientation.z))
 
             # estimate engagement
-            engagement_score, prob = self._pse.estimate_engagement(np.asarray(face_features))
+            engagement_score, prob = self._pse.estimate_engagement(face_features)
             rospy.logdebug("Engagement score = %f, engagement prob = %f", engagement_score, prob)
 
             affective_state = AffectiveState()
@@ -117,7 +123,7 @@ class PersonStateEstimationWrapper(object):
 
     def audio_feature_cb(self, data: AudioFeatures) -> None:
        rospy.logdebug("Audio feature msg received")
-        
+
     def event_callback(self, data: String) -> None:
         event_out_data = String()
         if data.data == "e_start":
@@ -138,4 +144,3 @@ class PersonStateEstimationWrapper(object):
         #start event in and out
         self._sub_event = rospy.Subscriber("~event_in", String, self.event_callback)
         self._pub_event = rospy.Publisher("~event_out", String, queue_size=1)
-
