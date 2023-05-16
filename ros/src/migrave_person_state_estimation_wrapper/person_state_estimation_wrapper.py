@@ -25,8 +25,18 @@ MIGRAVE_AU_NAMES = ['AU01', 'AU02', 'AU04', 'AU05', 'AU06',
                     'AU15', 'AU17', 'AU20', 'AU23', 'AU25',
                     'AU26', 'AU28', 'AU45']
 
+MIGRAVE_CAMERA_NAMES = ['color', 'left', 'right']
 
 class PersonStateEstimationWrapper(object):
+    face_feature_cache_size = 100
+    face_feature_caches =  {}
+
+    _pub_affective_state = None
+    _pub_debug_img = None
+
+    _sub_face_features = None
+    _sub_audio_features = None
+
 
     def __init__(self):
         self._config_file = rospy.get_param("~config_path", None)
@@ -48,14 +58,6 @@ class PersonStateEstimationWrapper(object):
         self.nuitrack_face_features = None
         self.nuitrack_face_feature_time = None
 
-        # publishers
-        self._pub_affective_state = rospy.Publisher("~affective_state", AffectiveState, queue_size=1)
-        self._pub_debug_img = rospy.Publisher("~debug_image", Image, queue_size=1)
-
-        # subscribers
-        self._sub_face_features = rospy.Subscriber(self._face_feature_topic, Faces, self.face_feature_cb)
-        self._sub_audio_features = rospy.Subscriber(self._audio_feature_topic, AudioFeatures, self.audio_feature_cb)
-
         self._cvbridge = CvBridge()
 
         self._engagement_cache_duration_seconds = rospy.get_param("~engagement_cache_seconds", 5.)
@@ -67,6 +69,8 @@ class PersonStateEstimationWrapper(object):
                                                                     GetAverageEngagementAction,
                                                                     self.get_avg_engagement)
 
+        self.val_changed = lambda xs: 1 if len(set(xs)) > 1 else 0
+
     def face_feature_cb(self, data: Faces) -> None:
         rospy.logdebug("Face feature msg received")
         for i, face in enumerate(data.faces):
@@ -75,38 +79,7 @@ class PersonStateEstimationWrapper(object):
             if i not in self._engagement_estimate_cache:
                 self._engagement_estimate_cache[i] = deque()
 
-            # we retrieve features required for engagement estimation
-            auc_dict = {}
-            for ac in face.action_units:
-                auc_dict[ac.name] = ac.presence
-
-            face_features = []
-            for au_name in MIGRAVE_AU_NAMES:
-                # we format the name of the AU feature as expected by the classifier
-                au_feature_name = f'of_{au_name}_c'
-                face_features.append((au_feature_name, auc_dict[au_name]))
-
-            # left gaze: of_gaze_0_x, ..y, ..z
-            face_features.append(('of_gaze_0_x', face.left_gaze.position.x))
-            face_features.append(('of_gaze_0_y', face.left_gaze.position.y))
-            face_features.append(('of_gaze_0_z', face.left_gaze.position.z))
-
-            # right gaze: of_gaze_1_x, ..y, ..z
-            face_features.append(('of_gaze_1_x', face.right_gaze.position.x))
-            face_features.append(('of_gaze_1_y', face.right_gaze.position.y))
-            face_features.append(('of_gaze_1_z', face.right_gaze.position.z))
-
-            # gaze angle
-            face_features.append(('of_gaze_angle_x', face.gaze_angle.x))
-            face_features.append(('of_gaze_angle_y', face.gaze_angle.y))
-
-            # head pose
-            face_features.append(('of_pose_Tx', face.head_pose.position.x))
-            face_features.append(('of_pose_Ty', face.head_pose.position.y))
-            face_features.append(('of_pose_Tz', face.head_pose.position.z))
-            face_features.append(('of_pose_Rx', face.head_pose.orientation.x))
-            face_features.append(('of_pose_Ry', face.head_pose.orientation.y))
-            face_features.append(('of_pose_Rz', face.head_pose.orientation.z))
+            face_features = self.extract_features_and_fill_caches(face)
 
             # estimate engagement
             engagement_score, prob = self._pse.estimate_engagement(face_features)
@@ -227,3 +200,171 @@ class PersonStateEstimationWrapper(object):
         #start event in and out
         self._sub_event = rospy.Subscriber("~event_in", String, self.event_callback)
         self._pub_event = rospy.Publisher("~event_out", String, queue_size=1)
+
+        # publishers
+        self._pub_affective_state = rospy.Publisher("~affective_state", AffectiveState, queue_size=1)
+        self._pub_debug_img = rospy.Publisher("~debug_image", Image, queue_size=1)
+
+        # subscribers
+        self._sub_face_features = rospy.Subscriber(self._face_feature_topic, Faces, self.face_feature_cb)
+        self._sub_audio_features = rospy.Subscriber(self._audio_feature_topic, AudioFeatures, self.audio_feature_cb)
+
+        for camera in MIGRAVE_CAMERA_NAMES:
+            self.face_feature_caches[camera] = {}
+            for au_name in MIGRAVE_AU_NAMES:
+                # we format the name of the AU feature as expected by the classifier
+                au_feature_name = f'of_{au_name}_c_features_video_{camera}'
+                self.face_feature_caches[au_feature_name] = deque(maxlen=self.face_feature_cache_size)
+            self.face_feature_caches[f'of_gaze_0_x_features_video_{camera}'] = deque(maxlen=self.face_feature_cache_size)
+            self.face_feature_caches[f'of_gaze_0_y_features_video_{camera}'] = deque(maxlen=self.face_feature_cache_size)
+            self.face_feature_caches[f'of_gaze_0_z_features_video_{camera}'] = deque(maxlen=self.face_feature_cache_size)
+            self.face_feature_caches[f'of_gaze_1_x_features_video_{camera}'] = deque(maxlen=self.face_feature_cache_size)
+            self.face_feature_caches[f'of_gaze_1_y_features_video_{camera}'] = deque(maxlen=self.face_feature_cache_size)
+            self.face_feature_caches[f'of_gaze_1_z_features_video_{camera}'] = deque(maxlen=self.face_feature_cache_size)
+            self.face_feature_caches[f'of_gaze_angle_x_features_video_{camera}'] = deque(maxlen=self.face_feature_cache_size)
+            self.face_feature_caches[f'of_gaze_angle_y_features_video_{camera}'] = deque(maxlen=self.face_feature_cache_size)
+            self.face_feature_caches[f'of_pose_Tx_features_video_{camera}'] = deque(maxlen=self.face_feature_cache_size)
+            self.face_feature_caches[f'of_pose_Ty_features_video_{camera}'] = deque(maxlen=self.face_feature_cache_size)
+            self.face_feature_caches[f'of_pose_Tz_features_video_{camera}'] = deque(maxlen=self.face_feature_cache_size)
+            self.face_feature_caches[f'of_pose_Rx_features_video_{camera}'] = deque(maxlen=self.face_feature_cache_size)
+            self.face_feature_caches[f'of_pose_Ry_features_video_{camera}'] = deque(maxlen=self.face_feature_cache_size)
+            self.face_feature_caches[f'of_pose_Rz_features_video_{camera}'] = deque(maxlen=self.face_feature_cache_size)
+            self.face_feature_caches[f'of_confidence_features_video_{camera}'] = deque(maxlen=self.face_feature_cache_size)
+            self.face_feature_caches[f'of_pose_distance_features_video_{camera}'] = deque(maxlen=self.face_feature_cache_size)
+            self.face_feature_caches[f'of_gaze_distance_features_video_{camera}'] = deque(maxlen=self.face_feature_cache_size)
+            self.face_feature_caches[f'of_gaze_distance_x_features_video_{camera}'] = deque(maxlen=self.face_feature_cache_size)
+            self.face_feature_caches[f'of_gaze_distance_y_features_video_{camera}'] = deque(maxlen=self.face_feature_cache_size)
+
+    def extract_features_and_fill_caches(self, face):
+        '''TODO: Define a convention for the order of the variables
+        that are used as input to the engagement estimation model so that
+        this abomination of a function can be simplified.
+        '''
+        # we retrieve features required for engagement estimation
+        auc_dict = {}
+        for ac in face.action_units:
+            auc_dict[ac.name] = ac.presence
+
+        face_features = []
+        for au_name in MIGRAVE_AU_NAMES:
+            # we format the name of the AU feature as expected by the classifier
+            au_feature_name = f'of_{au_name}_c_features_video_{face.camera_name}'
+            face_features.append((au_feature_name, auc_dict[au_name]))
+            self.face_feature_caches[au_feature_name].append(auc_dict[au_name])
+
+        # left gaze: of_gaze_0_x, ..y, ..z
+        face_features.append((f'of_gaze_0_x_features_video_{face.camera_name}', face.left_gaze.position.x))
+        self.face_feature_caches[f'of_gaze_0_x_features_video_{face.camera_name}'].append(face.left_gaze.position.x)
+
+        face_features.append((f'of_gaze_0_y_features_video_{face.camera_name}', face.left_gaze.position.y))
+        self.face_feature_caches[f'of_gaze_0_y_features_video_{face.camera_name}'].append(face.left_gaze.position.y)
+
+        face_features.append((f'of_gaze_0_z_features_video_{face.camera_name}', face.left_gaze.position.z))
+        self.face_feature_caches[f'of_gaze_0_z_features_video_{face.camera_name}'].append(face.left_gaze.position.z)
+
+        # right gaze: of_gaze_1_x, ..y, ..z
+        face_features.append((f'of_gaze_1_x_features_video_{face.camera_name}', face.right_gaze.position.x))
+        self.face_feature_caches[f'of_gaze_1_x_features_video_{face.camera_name}'].append(face.right_gaze.position.x)
+
+        face_features.append((f'of_gaze_1_y_features_video_{face.camera_name}', face.right_gaze.position.y))
+        self.face_feature_caches[f'of_gaze_1_y_features_video_{face.camera_name}'].append(face.right_gaze.position.y)
+
+        face_features.append((f'of_gaze_1_z_features_video_{face.camera_name}', face.right_gaze.position.z))
+        self.face_feature_caches[f'of_gaze_1_z_features_video_{face.camera_name}'].append(face.right_gaze.position.z)
+
+        # gaze angle
+        face_features.append((f'of_gaze_angle_x_features_video_{face.camera_name}', face.gaze_angle.x))
+        self.face_feature_caches[f'of_gaze_angle_x_features_video_{face.camera_name}'].append(face.gaze_angle.x)
+
+        face_features.append((f'of_gaze_angle_y_features_video_{face.camera_name}', face.gaze_angle.y))
+        self.face_feature_caches[f'of_gaze_angle_y_features_video_{face.camera_name}'].append(face.gaze_angle.y)
+
+        # head pose
+        face_features.append((f'of_pose_Tx_features_video_{face.camera_name}', face.head_pose.position.x))
+        self.face_feature_caches[f'of_pose_Tx_features_video_{face.camera_name}'].append(face.head_pose.position.x)
+
+        face_features.append((f'of_pose_Ty_features_video_{face.camera_name}', face.head_pose.position.y))
+        self.face_feature_caches[f'of_pose_Ty_features_video_{face.camera_name}'].append(face.head_pose.position.y)
+
+        face_features.append((f'of_pose_Tz_features_video_{face.camera_name}', face.head_pose.position.z))
+        self.face_feature_caches[f'of_pose_Tz_features_video_{face.camera_name}'].append(face.head_pose.position.z)
+
+        face_features.append((f'of_pose_Rx_features_video_{face.camera_name}', face.head_pose.orientation.x))
+        self.face_feature_caches[f'of_pose_Rx_features_video_{face.camera_name}'].append(face.head_pose.orientation.x)
+
+        face_features.append((f'of_pose_Ry_features_video_{face.camera_name}', face.head_pose.orientation.y))
+        self.face_feature_caches[f'of_pose_Ry_features_video_{face.camera_name}'].append(face.head_pose.orientation.y)
+
+        face_features.append((f'of_pose_Rz_features_video_{face.camera_name}', face.head_pose.orientation.z))
+        self.face_feature_caches[f'of_pose_Rz_features_video_{face.camera_name}'].append(face.head_pose.orientation.z)
+
+        # feature detection confidence
+        face_features.append((f'of_confidence_features_video_{face.camera_name}', face.detection_confidence))
+        self.face_feature_caches[f'of_confidence_features_video_{face.camera_name}'].append(face.detection_confidence)
+
+        # distances
+        face_features.append((f'of_pose_distance_features_video_{face.camera_name}', 0.))
+        self.face_feature_caches[f'of_pose_distance_features_video_{face.camera_name}'].append(0)
+
+        face_features.append((f'of_gaze_distance_features_video_{face.camera_name}', 0.))
+        self.face_feature_caches[f'of_gaze_distance_features_video_{face.camera_name}'].append(0)
+
+        face_features.append((f'of_gaze_distance_x_features_video_{face.camera_name}', 0.))
+        self.face_feature_caches[f'of_gaze_distance_x_features_video_{face.camera_name}'].append(0)
+
+        face_features.append((f'of_gaze_distance_y_features_video_{face.camera_name}', 0.))
+        self.face_feature_caches[f'of_gaze_distance_y_features_video_{face.camera_name}'].append(0)
+
+        # variances
+        face_features.append((f'of_confidence_var_features_video_{face.camera_name}',
+                                np.var(self.face_feature_caches[f'of_confidence_var_features_video_{face.camera_name}'])))
+        face_features.append((f'of_pose_distance_var_features_video_{face.camera_name}',
+                                np.var(self.face_feature_caches[f'of_pose_distance_var_features_video_{face.camera_name}'])))
+        face_features.append((f'of_gaze_distance_var_features_video_{face.camera_name}',
+                                np.var(self.face_feature_caches[f'of_gaze_distance_var_features_video_{face.camera_name}'])))
+        face_features.append((f'of_gaze_distance_x_var_features_video_{face.camera_name}',
+                                np.var(self.face_feature_caches[f'of_gaze_distance_x_var_features_video_{face.camera_name}'])))
+        face_features.append((f'of_gaze_distance_y_var_features_video_{face.camera_name}',
+                                np.var(self.face_feature_caches[f'of_gaze_distance_y_var_features_video_{face.camera_name}'])))
+        face_features.append((f'of_pose_Rx_var_features_video_{face.camera_name}',
+                                np.var(self.face_feature_caches[f'of_pose_Rx_var_features_video_{face.camera_name}'])))
+        face_features.append((f'of_pose_Ry_var_features_video_{face.camera_name}',
+                                np.var(self.face_feature_caches[f'of_pose_Ry_var_features_video_{face.camera_name}'])))
+        face_features.append((f'of_pose_Rz_var_features_video_{face.camera_name}',
+                                np.var(self.face_feature_caches[f'of_pose_Rz_var_features_video_{face.camera_name}'])))
+        face_features.append((f'of_pose_Tx_var_features_video_{face.camera_name}',
+                                np.var(self.face_feature_caches[f'of_pose_Tx_var_features_video_{face.camera_name}'])))
+        face_features.append((f'of_pose_Ty_var_features_video_{face.camera_name}',
+                                np.var(self.face_feature_caches[f'of_pose_Ty_var_features_video_{face.camera_name}'])))
+        face_features.append((f'of_pose_Tz_var_features_video_{face.camera_name}',
+                                np.var(self.face_feature_caches[f'of_pose_Tz_var_features_video_{face.camera_name}'])))
+        face_features.append((f'of_gaze_0_x_var_features_video_{face.camera_name}',
+                                np.var(self.face_feature_caches[f'of_gaze_0_x_var_features_video_{face.camera_name}'])))
+        face_features.append((f'of_gaze_0_y_var_features_video_{face.camera_name}',
+                                np.var(self.face_feature_caches[f'of_gaze_0_y_var_features_video_{face.camera_name}'])))
+        face_features.append((f'of_gaze_0_z_var_features_video_{face.camera_name}',
+                                np.var(self.face_feature_caches[f'of_gaze_0_z_var_features_video_{face.camera_name}'])))
+        face_features.append((f'of_gaze_1_x_var_features_video_{face.camera_name}',
+                                np.var(self.face_feature_caches[f'of_gaze_1_x_var_features_video_{face.camera_name}'])))
+        face_features.append((f'of_gaze_1_y_var_features_video_{face.camera_name}',
+                                np.var(self.face_feature_caches[f'of_gaze_1_y_var_features_video_{face.camera_name}'])))
+        face_features.append((f'of_gaze_1_z_var_features_video_{face.camera_name}',
+                                np.var(self.face_feature_caches[f'of_gaze_1_z_var_features_video_{face.camera_name}'])))
+        face_features.append((f'of_gaze_angle_x_var_features_video_{face.camera_name}',
+                                np.var(self.face_feature_caches[f'of_gaze_angle_x_var_features_video_{face.camera_name}'])))
+        face_features.append((f'of_gaze_angle_y_var_features_video_{face.camera_name}',
+                                np.var(self.face_feature_caches[f'of_gaze_angle_y_var_features_video_{face.camera_name}'])))
+
+        # action unit changes
+        for au_name in MIGRAVE_AU_NAMES:
+            # we format the name of the AU feature as expected by the classifier
+            au_feature_name = f'of_{au_name}_c_features_video_{face.camera_name}'
+            face_features.append((f'of_{au_name}_c_change_features_video_{face.camera_name}',
+                                    self.val_changed(self.face_feature_caches[au_feature_name])))
+
+        # game features
+        face_features.append(('ros_in_game', 1))
+        face_features.append(('ros_ts_attempt', 1.))
+        face_features.append(('ros_ts_robot_talked', 0.))
+
+        return face_features
