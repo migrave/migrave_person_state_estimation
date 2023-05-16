@@ -39,7 +39,7 @@ class PersonStateEstimation(object):
         features = pd.DataFrame()
         if normalize:
             for f_name, f_val in feature_values:
-                features[f_name] = [(f_val - self._engagement_mean[f_name]) / self._engagement_std[f_name]]
+                features[f_name] = [(f_val - self._engagement_mean[f_name]) / (self._engagement_std[f_name] + 1e-15)]
         else:
             for f_name, f_val in feature_values:
                 features[f_name] = [f_val]
