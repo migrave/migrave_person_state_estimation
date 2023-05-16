@@ -317,43 +317,43 @@ class PersonStateEstimationWrapper(object):
 
         # variances
         face_features.append((f'of_confidence_var_features_video_{face.camera_name}',
-                                np.var(self.face_feature_caches[f'of_confidence_var_features_video_{face.camera_name}'])))
+                                np.var(self.face_feature_caches[f'of_confidence_features_video_{face.camera_name}'])))
         face_features.append((f'of_pose_distance_var_features_video_{face.camera_name}',
-                                np.var(self.face_feature_caches[f'of_pose_distance_var_features_video_{face.camera_name}'])))
+                                np.var(self.face_feature_caches[f'of_pose_distance_features_video_{face.camera_name}'])))
         face_features.append((f'of_gaze_distance_var_features_video_{face.camera_name}',
-                                np.var(self.face_feature_caches[f'of_gaze_distance_var_features_video_{face.camera_name}'])))
+                                np.var(self.face_feature_caches[f'of_gaze_distance_features_video_{face.camera_name}'])))
         face_features.append((f'of_gaze_distance_x_var_features_video_{face.camera_name}',
-                                np.var(self.face_feature_caches[f'of_gaze_distance_x_var_features_video_{face.camera_name}'])))
+                                np.var(self.face_feature_caches[f'of_gaze_distance_x_features_video_{face.camera_name}'])))
         face_features.append((f'of_gaze_distance_y_var_features_video_{face.camera_name}',
-                                np.var(self.face_feature_caches[f'of_gaze_distance_y_var_features_video_{face.camera_name}'])))
+                                np.var(self.face_feature_caches[f'of_gaze_distance_y_features_video_{face.camera_name}'])))
         face_features.append((f'of_pose_Rx_var_features_video_{face.camera_name}',
-                                np.var(self.face_feature_caches[f'of_pose_Rx_var_features_video_{face.camera_name}'])))
+                                np.var(self.face_feature_caches[f'of_pose_Rx_features_video_{face.camera_name}'])))
         face_features.append((f'of_pose_Ry_var_features_video_{face.camera_name}',
-                                np.var(self.face_feature_caches[f'of_pose_Ry_var_features_video_{face.camera_name}'])))
+                                np.var(self.face_feature_caches[f'of_pose_Ry_features_video_{face.camera_name}'])))
         face_features.append((f'of_pose_Rz_var_features_video_{face.camera_name}',
-                                np.var(self.face_feature_caches[f'of_pose_Rz_var_features_video_{face.camera_name}'])))
+                                np.var(self.face_feature_caches[f'of_pose_Rz_features_video_{face.camera_name}'])))
         face_features.append((f'of_pose_Tx_var_features_video_{face.camera_name}',
-                                np.var(self.face_feature_caches[f'of_pose_Tx_var_features_video_{face.camera_name}'])))
+                                np.var(self.face_feature_caches[f'of_pose_Tx_features_video_{face.camera_name}'])))
         face_features.append((f'of_pose_Ty_var_features_video_{face.camera_name}',
-                                np.var(self.face_feature_caches[f'of_pose_Ty_var_features_video_{face.camera_name}'])))
+                                np.var(self.face_feature_caches[f'of_pose_Ty_features_video_{face.camera_name}'])))
         face_features.append((f'of_pose_Tz_var_features_video_{face.camera_name}',
-                                np.var(self.face_feature_caches[f'of_pose_Tz_var_features_video_{face.camera_name}'])))
+                                np.var(self.face_feature_caches[f'of_pose_Tz_features_video_{face.camera_name}'])))
         face_features.append((f'of_gaze_0_x_var_features_video_{face.camera_name}',
-                                np.var(self.face_feature_caches[f'of_gaze_0_x_var_features_video_{face.camera_name}'])))
+                                np.var(self.face_feature_caches[f'of_gaze_0_x_features_video_{face.camera_name}'])))
         face_features.append((f'of_gaze_0_y_var_features_video_{face.camera_name}',
-                                np.var(self.face_feature_caches[f'of_gaze_0_y_var_features_video_{face.camera_name}'])))
+                                np.var(self.face_feature_caches[f'of_gaze_0_y_features_video_{face.camera_name}'])))
         face_features.append((f'of_gaze_0_z_var_features_video_{face.camera_name}',
-                                np.var(self.face_feature_caches[f'of_gaze_0_z_var_features_video_{face.camera_name}'])))
+                                np.var(self.face_feature_caches[f'of_gaze_0_z_features_video_{face.camera_name}'])))
         face_features.append((f'of_gaze_1_x_var_features_video_{face.camera_name}',
-                                np.var(self.face_feature_caches[f'of_gaze_1_x_var_features_video_{face.camera_name}'])))
+                                np.var(self.face_feature_caches[f'of_gaze_1_x_features_video_{face.camera_name}'])))
         face_features.append((f'of_gaze_1_y_var_features_video_{face.camera_name}',
-                                np.var(self.face_feature_caches[f'of_gaze_1_y_var_features_video_{face.camera_name}'])))
+                                np.var(self.face_feature_caches[f'of_gaze_1_y_features_video_{face.camera_name}'])))
         face_features.append((f'of_gaze_1_z_var_features_video_{face.camera_name}',
-                                np.var(self.face_feature_caches[f'of_gaze_1_z_var_features_video_{face.camera_name}'])))
+                                np.var(self.face_feature_caches[f'of_gaze_1_z_features_video_{face.camera_name}'])))
         face_features.append((f'of_gaze_angle_x_var_features_video_{face.camera_name}',
-                                np.var(self.face_feature_caches[f'of_gaze_angle_x_var_features_video_{face.camera_name}'])))
+                                np.var(self.face_feature_caches[f'of_gaze_angle_x_features_video_{face.camera_name}'])))
         face_features.append((f'of_gaze_angle_y_var_features_video_{face.camera_name}',
-                                np.var(self.face_feature_caches[f'of_gaze_angle_y_var_features_video_{face.camera_name}'])))
+                                np.var(self.face_feature_caches[f'of_gaze_angle_y_features_video_{face.camera_name}'])))
 
         # action unit changes
         for au_name in MIGRAVE_AU_NAMES:
