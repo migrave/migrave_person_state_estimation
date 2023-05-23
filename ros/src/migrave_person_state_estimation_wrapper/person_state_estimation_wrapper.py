@@ -27,6 +27,22 @@ MIGRAVE_AU_NAMES = ['AU01', 'AU02', 'AU04', 'AU05', 'AU06',
 
 MIGRAVE_CAMERA_NAMES = ['color', 'left', 'right']
 
+def line_plane_collision(plane_normal: np.array,
+                         plane_point: np.array,
+                         ray_direction: np.array,
+                         ray_point: np.array,
+                         epsilon: float = 1e-6):
+    """Function taken from https://github.com/RFH-MMI/MigrAVE_Preprocessing/blob/main/features_face.py
+    """
+    ndotu = plane_normal.dot(ray_direction)
+    if abs(ndotu) < epsilon:
+        return np.nan
+
+    w = ray_point - plane_point
+    si = - plane_normal.dot(w) / ndotu
+    psi = w + si * ray_direction + plane_point
+    return psi
+
 class PersonStateEstimationWrapper(object):
     face_feature_cache_size = 100
     face_feature_caches =  {}
@@ -303,17 +319,21 @@ class PersonStateEstimationWrapper(object):
         self.face_feature_caches[f'of_confidence_features_video_{face.camera_name}'].append(face.detection_confidence)
 
         # distances
-        face_features.append((f'of_pose_distance_features_video_{face.camera_name}', 0.))
-        self.face_feature_caches[f'of_pose_distance_features_video_{face.camera_name}'].append(0)
+        pose_distance = np.linalg.norm(np.array([face.head_pose.position.x,
+                                                 face.head_pose.position.y,
+                                                 face.head_pose.position.z]))
+        face_features.append((f'of_pose_distance_features_video_{face.camera_name}', pose_distance))
+        self.face_feature_caches[f'of_pose_distance_features_video_{face.camera_name}'].append(pose_distance)
 
-        face_features.append((f'of_gaze_distance_features_video_{face.camera_name}', 0.))
-        self.face_feature_caches[f'of_gaze_distance_features_video_{face.camera_name}'].append(0)
+        gaze_distance, gaze_distance_x, gaze_distance_y = self.get_gaze_distance(face)
+        face_features.append((f'of_gaze_distance_features_video_{face.camera_name}', gaze_distance))
+        self.face_feature_caches[f'of_gaze_distance_features_video_{face.camera_name}'].append(gaze_distance)
 
-        face_features.append((f'of_gaze_distance_x_features_video_{face.camera_name}', 0.))
-        self.face_feature_caches[f'of_gaze_distance_x_features_video_{face.camera_name}'].append(0)
+        face_features.append((f'of_gaze_distance_x_features_video_{face.camera_name}', gaze_distance_x))
+        self.face_feature_caches[f'of_gaze_distance_x_features_video_{face.camera_name}'].append(gaze_distance_x)
 
-        face_features.append((f'of_gaze_distance_y_features_video_{face.camera_name}', 0.))
-        self.face_feature_caches[f'of_gaze_distance_y_features_video_{face.camera_name}'].append(0)
+        face_features.append((f'of_gaze_distance_y_features_video_{face.camera_name}', gaze_distance_y))
+        self.face_feature_caches[f'of_gaze_distance_y_features_video_{face.camera_name}'].append(gaze_distance_y)
 
         # variances
         face_features.append((f'of_confidence_var_features_video_{face.camera_name}',
@@ -321,11 +341,11 @@ class PersonStateEstimationWrapper(object):
         face_features.append((f'of_pose_distance_var_features_video_{face.camera_name}',
                                 np.var(self.face_feature_caches[f'of_pose_distance_features_video_{face.camera_name}'])))
         face_features.append((f'of_gaze_distance_var_features_video_{face.camera_name}',
-                                np.var(self.face_feature_caches[f'of_gaze_distance_features_video_{face.camera_name}'])))
+                                np.nanvar(self.face_feature_caches[f'of_gaze_distance_features_video_{face.camera_name}'])))
         face_features.append((f'of_gaze_distance_x_var_features_video_{face.camera_name}',
-                                np.var(self.face_feature_caches[f'of_gaze_distance_x_features_video_{face.camera_name}'])))
+                                np.nanvar(self.face_feature_caches[f'of_gaze_distance_x_features_video_{face.camera_name}'])))
         face_features.append((f'of_gaze_distance_y_var_features_video_{face.camera_name}',
-                                np.var(self.face_feature_caches[f'of_gaze_distance_y_features_video_{face.camera_name}'])))
+                                np.nanvar(self.face_feature_caches[f'of_gaze_distance_y_features_video_{face.camera_name}'])))
         face_features.append((f'of_pose_Rx_var_features_video_{face.camera_name}',
                                 np.var(self.face_feature_caches[f'of_pose_Rx_features_video_{face.camera_name}'])))
         face_features.append((f'of_pose_Ry_var_features_video_{face.camera_name}',
@@ -368,3 +388,26 @@ class PersonStateEstimationWrapper(object):
         face_features.append(('ros_ts_robot_talked', 0.))
 
         return face_features
+
+    def get_gaze_distance(self, face):
+        """Calculation taken from https://github.com/RFH-MMI/MigrAVE_Preprocessing/blob/main/features_face.py
+        """
+        pupil_left = np.array([face.left_gaze.position.x, face.left_gaze.position.y, face.left_gaze.position.z])
+        pupil_right = np.array([face.right_gaze.position.x, face.right_gaze.position.y, face.right_gaze.position.z])
+        pupil_avg = (pupil_left + pupil_right) / 2
+
+        gaze_direction = np.array([face.gaze_direction.x, face.gaze_direction.y, face.gaze_direction.z])
+
+        gaze_intersection_xy = line_plane_collision(plane_normal=np.array([0, 0, 1]),
+                                                    plane_point=np.array([0, 0, 0]),
+                                                    ray_direction=gaze_direction,
+                                                    ray_point=pupil_avg)
+        if not isinstance(gaze_intersection_xy, np.ndarray) and np.isnan(gaze_intersection_xy):
+            gaze_distance_x = gaze_intersection_xy
+            gaze_distance_y = gaze_intersection_xy
+            gaze_distance = gaze_intersection_xy
+        else:
+            gaze_distance_x = np.abs(gaze_intersection_xy[0])
+            gaze_distance_y = np.abs(gaze_intersection_xy[1])
+            gaze_distance = np.linalg.norm(gaze_intersection_xy[:2])
+        return (gaze_distance, gaze_distance_x, gaze_distance_y)
