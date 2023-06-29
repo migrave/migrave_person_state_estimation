@@ -17,12 +17,12 @@ class PersonStateEstimation(object):
                                     "models",
                                     self._config["engagement"]["model_file"])
 
-            self._engagement_cls, self._engagement_mean, self._engagement_std = self.load_classifier(cls_path)
+            self._engagement_cls, self._engagement_max, self._engagement_min = self.load_classifier(cls_path)
 
     def load_classifier(self, cls_path):
         with open(cls_path, 'rb') as f:
-            classifier, mean, std = joblib.load(f)
-        return classifier, mean, std
+            classifier, max_vals, min_vals = joblib.load(f)
+        return classifier, max_vals, min_vals
 
     def estimate_engagement(self, feature_values: Sequence[Tuple[str, float]],
                             normalize=True):
@@ -39,7 +39,8 @@ class PersonStateEstimation(object):
         features = pd.DataFrame()
         if normalize:
             for f_name, f_val in feature_values:
-                features[f_name] = [(f_val - self._engagement_mean[f_name]) / (self._engagement_std[f_name] + 1e-15)]
+                f_val = np.clip(f_val, self._engagement_min[f_name], self._engagement_max[f_name])
+                features[f_name] = [(f_val - self._engagement_min[f_name]) / (self._engagement_max[f_name] - self._engagement_min[f_name] + 1e-15)]
         else:
             for f_name, f_val in feature_values:
                 features[f_name] = [f_val]
