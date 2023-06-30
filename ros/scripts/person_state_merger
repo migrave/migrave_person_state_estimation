@@ -1,0 +1,136 @@
+#!/usr/bin/env python
+from collections import deque
+import numpy as np
+import rospy
+from std_msgs.msg import String
+from actionlib import SimpleActionServer
+from migrave_ros_msgs.msg import (AffectiveState,
+                                  GetAverageEngagementAction,
+                                  GetAverageEngagementGoal,
+                                  GetAverageEngagementResult)
+
+class PersonStateMerger(object):
+    def __init__(self):
+        self.camera_names = rospy.get_param("~camera_names", [])
+        self.engagement_topics = rospy.get_param("~engagement_topics", [])
+        self.overall_engagement_topic = rospy.get_param("~overall_engagement_topic",
+                                                        "/migrave_perception/person_state_estimator/affective_state")
+        self._sub_event = rospy.Subscriber("~event_in", String, self.event_callback)
+        self.highest_frequency_estimation_camera = rospy.get_param("~highest_frequency_estimation_camera", "rgbd")
+        self.estimate_timeout_s = rospy.get_param("~estimate_timeout_s", 0.5)
+        self.engagement_cache_duration_s = rospy.get_param("~engagement_cache_s", 5.)
+
+        self._avg_engagement_estimation_server_name = rospy.get_param("~avg_engagement_estimation_server_name",
+                                                                      "/migrave/get_avg_engagement")
+        self._avg_engagement_estimation_server = SimpleActionServer(self._avg_engagement_estimation_server_name,
+                                                                    GetAverageEngagementAction,
+                                                                    self.get_avg_engagement)
+
+        rospy.loginfo(self.overall_engagement_topic)
+        self.engagement_pub = rospy.Publisher(self.overall_engagement_topic, AffectiveState, queue_size=1)
+        self.engagement_subs = []
+        self.engagement_buffers = dict()
+        self.overall_engagement_cache = []
+        self.current_affective_state = AffectiveState()
+        self.is_active = False
+
+    def register_engagement(self, msg):
+        # we update the engagement estimate cache for the current user
+        engagement_estimate_time = msg.stamp.to_sec()
+        if self.engagement_buffers[msg.camera_name]:
+            # we clean old entries in the cache (older than the maximum cache duration)
+            clean_cache = True
+            while clean_cache:
+                time_diff_to_first_estimate = (engagement_estimate_time - self.engagement_buffers[msg.camera_name][0].stamp.to_sec())
+                if time_diff_to_first_estimate > self.engagement_cache_duration_s:
+                    self.engagement_buffers[msg.camera_name].popleft()
+
+                    # we stop if the cache is empty after removing the element removal
+                    if not self.engagement_buffers[msg.camera_name]:
+                        clean_cache = False
+                else:
+                    clean_cache = False
+        self.engagement_buffers[msg.camera_name].append(msg)
+
+    def publish_engagement(self):
+        if not self.engagement_buffers[self.highest_frequency_estimation_camera]:
+            rospy.logwarn("[publish_engagement] No engagement data to publish")
+            return
+
+        self.current_affective_state.engagement = 0.
+        latest_estimate_s = self.engagement_buffers[self.highest_frequency_estimation_camera][-1].stamp.to_sec()
+        recent_camera_data = []
+        current_time = rospy.Time.now().to_sec()
+        for camera in self.camera_names:
+            if not self.engagement_buffers[camera]: continue
+            latest_camera_estimate_s = self.engagement_buffers[camera][-1].stamp.to_sec()
+            recent_camera_data.append(int((current_time - latest_camera_estimate_s) < self.estimate_timeout_s))
+            if abs(latest_estimate_s - latest_camera_estimate_s) < self.estimate_timeout_s:
+                self.current_affective_state.engagement = max(self.current_affective_state.engagement,
+                                                              float(self.engagement_buffers[camera][-1].engagement > 0.5))
+
+        if sum(recent_camera_data) == 0:
+            rospy.logwarn("[publish_engagement] No recent engagement data to publish")
+            return
+
+        self.overall_engagement_cache.append((rospy.Time.now().to_sec(), self.current_affective_state.engagement))
+        self.current_affective_state.stamp = rospy.Time.now()
+        self.engagement_pub.publish(self.current_affective_state)
+
+    def event_callback(self, data: String) -> None:
+        if data.data == "e_start":
+            for camera_name, engagement_topic in zip(self.camera_names, self.engagement_topics):
+                rospy.loginfo("%s, %s", camera_name, engagement_topic)
+                self.engagement_buffers[camera_name] = deque()
+                self.engagement_cache = []
+                self.engagement_subs.append(rospy.Subscriber(engagement_topic,
+                                                            AffectiveState,
+                                                            self.register_engagement))
+            self.is_active = True
+        elif data.data == "e_stop":
+            for i in range(len(self.engagement_subs)):
+                self.engagement_subs[i].unregister()
+            self.engagement_subs = []
+            self.is_active = False
+
+    def get_avg_engagement(self, goal: GetAverageEngagementGoal) -> None:
+        result = GetAverageEngagementResult()
+
+        # we create a copy of the cache so that we work with a "frozen" cache version
+        # rather than one that might be changed while the cache is being read
+        raw_engagement_estimates = list(self.overall_engagement_cache)
+        estimates_within_time_range = [(t, e) for (t, e) in raw_engagement_estimates
+                                       if goal.start_time <= t <= goal.end_time]
+
+        # we return an empty result if there are no engagement estimates
+        # within the specified time range
+        if not estimates_within_time_range:
+            rospy.logwarn(f"[get_avg_engagement] No estimates within range {goal.start_time} - {goal.end_time}")
+            self._avg_engagement_estimation_server.set_succeeded(result)
+            return
+
+        # we estimate the average engagement for each second within the given time range
+        rospy.loginfo(f"[get_avg_engagement] Calculating average engagement values between {goal.start_time} - {goal.end_time}")
+        estimate_idx = 0
+        current_first_estimate_idx = 0
+        while estimate_idx < len(estimates_within_time_range):
+            time_diff = estimates_within_time_range[estimate_idx][0] - estimates_within_time_range[current_first_estimate_idx][0]
+            if time_diff > 1:
+                s = sum([e for _, e in estimates_within_time_range[current_first_estimate_idx:estimate_idx]])
+                avg = s / (estimate_idx - current_first_estimate_idx)
+
+                result.timestamps.append(estimates_within_time_range[estimate_idx-1][0])
+                result.avg_engagement.append(avg)
+                current_first_estimate_idx = estimate_idx
+            estimate_idx += 1
+
+        rospy.loginfo("[get_avg_engagement] Done calculating; setting result")
+        self._avg_engagement_estimation_server.set_succeeded(result)
+
+if __name__ == "__main__":
+    rospy.init_node("person_state_merger")
+    person_state_merger = PersonStateMerger()
+    while not rospy.is_shutdown():
+        if person_state_merger.is_active:
+            person_state_merger.publish_engagement()
+        rospy.sleep(0.1)

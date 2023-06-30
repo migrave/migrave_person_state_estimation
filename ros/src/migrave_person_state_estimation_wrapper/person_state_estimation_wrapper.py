@@ -9,14 +9,10 @@ from cv_bridge import CvBridge
 from rospkg import RosPack
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
-from actionlib import SimpleActionServer
 
 from migrave_common import file_utils
 from migrave_ros_msgs.msg import (AffectiveState, AudioFeatures, Faces,
-                                  OverallGamePerformance, Person,
-                                  GetAverageEngagementAction,
-                                  GetAverageEngagementGoal,
-                                  GetAverageEngagementResult)
+                                  OverallGamePerformance, Person)
 from migrave_person_state_estimation.person_state_estimation import \
     PersonStateEstimation
 
@@ -63,6 +59,7 @@ class PersonStateEstimationWrapper(object):
 
         self._config = file_utils.parse_yaml_config(self._config_file)
         self._debug = rospy.get_param("~debug", False)
+        self._camera_name = rospy.get_param("~camera_name", "rgbd")
 
         self._face_feature_topic = rospy.get_param("~face_feature_topic", "/face_features")
         self._audio_feature_topic = rospy.get_param("~audio_feature_topic", "/audio_features")
@@ -76,25 +73,13 @@ class PersonStateEstimationWrapper(object):
 
         self._cvbridge = CvBridge()
 
-        self._engagement_cache_duration_seconds = rospy.get_param("~engagement_cache_seconds", 5.)
         self._engagement_estimate_cache = {}
-
-        self._avg_engagement_estimation_server_name = rospy.get_param("~avg_engagement_estimation_server_name",
-                                                                      "/migrave/get_avg_engagement")
-        self._avg_engagement_estimation_server = SimpleActionServer(self._avg_engagement_estimation_server_name,
-                                                                    GetAverageEngagementAction,
-                                                                    self.get_avg_engagement)
 
         self.val_changed = lambda xs: 1 if len(set(xs)) > 1 else 0
 
     def face_feature_cb(self, data: Faces) -> None:
         rospy.logdebug("Face feature msg received")
         for i, face in enumerate(data.faces):
-            # we inititialise an engagement queue for the current
-            # user if one doesn't already exits
-            if i not in self._engagement_estimate_cache:
-                self._engagement_estimate_cache[i] = deque()
-
             face_features = self.extract_features_and_fill_caches(face)
 
             # estimate engagement
@@ -103,6 +88,7 @@ class PersonStateEstimationWrapper(object):
 
             affective_state = AffectiveState()
             affective_state.stamp = rospy.Time.now()
+            affective_state.camera_name = self._camera_name
 
             # ToDo: add estimation for valence and arousal
             affective_state.valence = 0.0
@@ -116,24 +102,6 @@ class PersonStateEstimationWrapper(object):
 
             # Publish affective_state
             self._pub_affective_state.publish(affective_state)
-
-            # we update the engagement estimate cache for the current user
-            engagement_estimate_time = rospy.Time.now().to_sec()
-            if self._engagement_estimate_cache[i]:
-                # we clean old entries in the cache (older than the maximum cache duration)
-                clean_cache = True
-                while clean_cache:
-                    time_diff_to_first_estimate = (engagement_estimate_time - self._engagement_estimate_cache[i][0][0])
-                    if time_diff_to_first_estimate > self._engagement_cache_duration_seconds:
-                        self._engagement_estimate_cache[i].popleft()
-
-                        # we stop if the cache is empty after removing the element removal
-                        if not self._engagement_estimate_cache[i]:
-                            clean_cache = False
-                    else:
-                        clean_cache = False
-            self._engagement_estimate_cache[i].append((engagement_estimate_time,
-                                                       engagement_score))
 
             # we publish a debug image for visualising the engagement score
             if self._debug:
@@ -169,48 +137,6 @@ class PersonStateEstimationWrapper(object):
             self._sub_face_feature.unregister()
             event_out_data.data = "e_stopped"
             self._pub_event.publish(event_out_data)
-
-    def get_avg_engagement(self, goal: GetAverageEngagementGoal) -> None:
-        result = GetAverageEngagementResult()
-
-        # ideally, the user ID should be passed on with the message, but we now
-        # assume that we only have one user that can be seen; we return an empty
-        # result if no engagement estimates have been made thus far
-        if 0 not in self._engagement_estimate_cache or not self._engagement_estimate_cache[0]:
-            rospy.logwarn(f"[get_avg_engagement] No engagement estimates for average calculation")
-            self._avg_engagement_estimation_server.set_succeeded(result)
-            return
-
-        # we create a copy of the cache so that we work with a "frozen" cache version
-        # rather than one that might be changed while the cache is being read
-        raw_engagement_estimates = list(self._engagement_estimate_cache[0])
-        estimates_within_time_range = [(t, e) for (t, e) in raw_engagement_estimates
-                                       if goal.start_time <= t <= goal.end_time]
-
-        # we return an empty result if there are no engagement estimates
-        # within the specified time range
-        if not estimates_within_time_range:
-            rospy.logwarn(f"[get_avg_engagement] No estimates within range {goal.start_time} - {goal.end_time}")
-            self._avg_engagement_estimation_server.set_succeeded(result)
-            return
-
-        # we estimate the average engagement for each second within the given time range
-        rospy.loginfo(f"[get_avg_engagement] Calculating average engagement values between {goal.start_time} - {goal.end_time}")
-        estimate_idx = 0
-        current_first_estimate_idx = 0
-        while estimate_idx < len(estimates_within_time_range):
-            time_diff = estimates_within_time_range[estimate_idx][0] - estimates_within_time_range[current_first_estimate_idx][0]
-            if time_diff > 1:
-                s = sum([e for _, e in estimates_within_time_range[current_first_estimate_idx:estimate_idx]])
-                avg = s / (estimate_idx - current_first_estimate_idx)
-
-                result.timestamps.append(estimates_within_time_range[estimate_idx-1][0])
-                result.avg_engagement.append(avg)
-                current_first_estimate_idx = estimate_idx
-            estimate_idx += 1
-
-        rospy.loginfo("[get_avg_engagement] Done calculating; setting result")
-        self._avg_engagement_estimation_server.set_succeeded(result)
 
     def initialize(self) -> None:
         #start event in and out
