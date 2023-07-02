@@ -1,0 +1,4 @@
+engagement:
+  model_file: generalized_xgboost_model_up.joblib
+affective_state:
+  model_file: affective_state.joblib
